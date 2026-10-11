@@ -16,7 +16,7 @@ import { api, } from '../services/api';
 import { useTheme } from '../theme/ThemeContext';
 
 interface LoginScreenProps {
-  onLoginSuccess: (token: string) => void;
+  onLoginSuccess: (token: string, expiresAt?: number) => void;
 }
 
 export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
@@ -36,7 +36,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
       const res = await api.login({ username, password });
       if (res.success && res.data?.token) {
-        onLoginSuccess(res.data.token);
+        onLoginSuccess(res.data.token, res.data.expiresAt);
       } else {
         Alert.alert('Login Failed', res.message || 'Invalid admin credentials');
       }

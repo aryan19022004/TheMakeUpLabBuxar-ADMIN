@@ -12,6 +12,11 @@ export const CUSTOM_DOMAIN_API_URL = 'https://themakeuplabbuxar.com';
 export const PARLOUR_KEY = '234678';
 
 export function getApiBaseUrl(mode: EnvironmentMode = ENV_MODE): string {
+  // If running in production release build (APK), default to production backend
+  if (typeof __DEV__ !== 'undefined' && !__DEV__) {
+    return mode === 'CUSTOM_DOMAIN' ? CUSTOM_DOMAIN_API_URL : PROD_API_URL;
+  }
+
   switch (mode) {
     case 'CUSTOM_DOMAIN':
       return CUSTOM_DOMAIN_API_URL;
@@ -31,8 +36,16 @@ export function setApiBaseUrl(newUrl: string) {
   }
 }
 
+import { getValidAuthToken, clearAuthToken } from '../utils/token';
+
+let onUnauthorizedListener: (() => void) | null = null;
+
+export function setOnUnauthorizedListener(listener: (() => void) | null) {
+  onUnauthorizedListener = listener;
+}
+
 export async function getAuthHeader(): Promise<Record<string, string>> {
-  const token = await AsyncStorage.getItem('admin_token');
+  const token = await getValidAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -58,13 +71,40 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}) {
 
     if (response.status === 401) {
       const errorData = await response.json().catch(() => ({}));
+      // Purge expired token automatically
+      await clearAuthToken();
+      if (onUnauthorizedListener) {
+        onUnauthorizedListener();
+      }
       return { success: false, message: errorData.message || 'Unauthorized / Session expired' };
     }
 
     const data = await response.json();
     return data;
   } catch (err: any) {
-    console.error(`API Error on ${endpoint}:`, err);
+    console.warn(`Local request failed on ${endpoint}:`, err?.message || err);
+
+    // If local request failed, attempt automatic fallback to production
+    if (API_BASE_URL === LOCAL_API_URL) {
+      try {
+        const fallbackUrl = `${PROD_API_URL}${endpoint}${separator}parlour_key=${encodeURIComponent(PARLOUR_KEY)}`;
+        const fallbackRes = await fetch(fallbackUrl, {
+          ...options,
+          headers,
+        });
+
+        if (fallbackRes.status === 401) {
+          const errorData = await fallbackRes.json().catch(() => ({}));
+          return { success: false, message: errorData.message || 'Unauthorized / Session expired' };
+        }
+
+        const fallbackData = await fallbackRes.json();
+        return fallbackData;
+      } catch (fallbackErr: any) {
+        console.error(`Fallback error on ${endpoint}:`, fallbackErr);
+      }
+    }
+
     return { success: false, message: err.message || 'Network request failed. Please check internet connection.' };
   }
 }
@@ -152,7 +192,7 @@ export const api = {
 
   // Settings
   getSettings: () => apiRequest('/api/settings'),
-  
+
   updateSettings: (data: any) => apiRequest('/api/settings', { method: 'POST', body: JSON.stringify(data) }),
 
   // Upload Image to Cloudinary

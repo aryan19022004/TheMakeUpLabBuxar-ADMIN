@@ -27,6 +27,9 @@ import CustomerCouponsScreen from './src/screens/CustomerCouponsScreen';
 import GalleryScreen from './src/screens/GalleryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 
+import { getValidAuthToken, saveAuthToken, clearAuthToken } from './src/utils/token';
+import { setOnUnauthorizedListener } from './src/services/api';
+
 function MainApp() {
   const { theme, setMode } = useTheme();
   const insets = useSafeAreaInsets();
@@ -45,17 +48,26 @@ function MainApp() {
 
   useEffect(() => {
     checkToken();
+    setOnUnauthorizedListener(() => {
+      handleLogout();
+    });
+    return () => {
+      setOnUnauthorizedListener(null);
+    };
   }, []);
 
   const checkToken = async () => {
     try {
-      const storedToken = await AsyncStorage.getItem('admin_token');
-      if (storedToken) {
-        setToken(storedToken);
+      const validToken = await getValidAuthToken();
+      if (validToken) {
+        setToken(validToken);
         loadDashboardStats();
+      } else {
+        setToken(null);
       }
     } catch (e) {
       console.error(e);
+      setToken(null);
     }
   };
 
@@ -83,14 +95,14 @@ function MainApp() {
     }
   };
 
-  const handleLoginSuccess = async (newToken: string) => {
-    await AsyncStorage.setItem('admin_token', newToken);
+  const handleLoginSuccess = async (newToken: string, expiresAt?: number) => {
+    await saveAuthToken(newToken, expiresAt);
     setToken(newToken);
     loadDashboardStats();
   };
 
   const handleLogout = async () => {
-    await AsyncStorage.removeItem('admin_token');
+    await clearAuthToken();
     setToken(null);
     setSidebarOpen(false);
   };

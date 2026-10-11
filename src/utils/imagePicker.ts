@@ -1,14 +1,20 @@
 import { launchImageLibrary, ImageLibraryOptions } from 'react-native-image-picker';
-import { api } from '../services/api';
-import { Alert } from 'react-native';
 
-export interface PickAndUploadResult {
+export interface PickImageResult {
   success: boolean;
-  url?: string;
+  uri?: string;
+  base64?: string;
+  fileName?: string;
+  fileSize?: number;
   message?: string;
 }
 
-export async function pickAndUploadImage(): Promise<PickAndUploadResult> {
+/**
+ * Opens image gallery to select an image.
+ * Does NOT immediately upload to server or Cloudinary.
+ * Returns local image URI for immediate preview and base64 string for form submission.
+ */
+export async function pickImage(): Promise<PickImageResult> {
   return new Promise((resolve) => {
     const options: ImageLibraryOptions = {
       mediaType: 'photo',
@@ -18,7 +24,7 @@ export async function pickAndUploadImage(): Promise<PickAndUploadResult> {
       maxHeight: 1200,
     };
 
-    launchImageLibrary(options, async (response) => {
+    launchImageLibrary(options, (response) => {
       if (response.didCancel) {
         resolve({ success: false, message: 'Image selection cancelled' });
         return;
@@ -33,24 +39,21 @@ export async function pickAndUploadImage(): Promise<PickAndUploadResult> {
       }
 
       const asset = response.assets && response.assets[0];
-      if (!asset || !asset.base64) {
+      if (!asset || (!asset.uri && !asset.base64)) {
         resolve({ success: false, message: 'No valid image selected' });
         return;
       }
 
       const mimeType = asset.type || 'image/jpeg';
-      const base64Data = `data:${mimeType};base64,${asset.base64}`;
+      const base64Data = asset.base64 ? `data:${mimeType};base64,${asset.base64}` : undefined;
 
-      try {
-        const res = await api.uploadImage(base64Data);
-        if (res.success && res.data?.url) {
-          resolve({ success: true, url: res.data.url });
-        } else {
-          resolve({ success: false, message: res.message || 'Image upload failed' });
-        }
-      } catch (err: any) {
-        resolve({ success: false, message: err.message || 'Failed to upload image to server' });
-      }
+      resolve({
+        success: true,
+        uri: asset.uri,
+        base64: base64Data,
+        fileName: asset.fileName,
+        fileSize: asset.fileSize,
+      });
     });
   });
 }
